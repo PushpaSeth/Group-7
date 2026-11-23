@@ -17,3 +17,23 @@ Member Responsibilities:
   - Shena Parks: Lead on API Endpoints (GET, POST); Supporting on Financial Logic & Status Toggle.
   - Pushpa Rathina: Lead on Financial Logic & Status Toggle; Supporting on API Endpoints (GET, POST).
   - Ivette Touzalin-Awadallah: Lead on Frontend Dashboard & Modal UI; Supporting on Full Stack Integration & Testing.
+
+  ## Setup and Running Locally
+
+Requirements: Node.js 22 (run `nvm use` if you have nvm) and npm.
+
+1. Install dependencies:
+   `npm install`
+2. Create your local environment file:
+   - Mac/Linux: `cp .env.example .env`
+   - Windows (PowerShell): `Copy-Item .env.example .env`
+3. (Optional) Load fictional sample data and start the server:
+   `npm run seed`
+   Warning: this deletes all existing subscriptions and reloads the sample records.
+4. Start the server:
+   `npm start`
+5. Open http://localhost:3000 in your browser. Press Ctrl+C in the terminal to stop the server.
+
+The SQLite database is created automatically in `data/` on first start.
+Do not commit `.env`, `node_modules/`, or files in `data/`.
+  
