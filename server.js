@@ -8,6 +8,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = process.env.DB_FILE || path.join(__dirname, 'data', 'subscriptions.db');
 
+const {
+  validateSubscriptionPayload,
+  VALID_STATUSES
+} = require('./validation.js');
+
 // Ensure data directory exists
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
@@ -29,8 +34,8 @@ if (process.argv.includes('--seed')) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const VALID_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'annual'];
-const VALID_STATUSES = ['active', 'paused', 'canceled'];
+//const VALID_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'annual'];
+//const VALID_STATUSES = ['active', 'paused', 'canceled'];
 
 /**
  * Converts billing amount_cents and frequency into standardized integer annual_cents
@@ -61,49 +66,6 @@ function computeSavingsDeltaCents(previousStatus, newStatus, annualCents) {
     return -annualCents; // Re-activated or paused; removes previously claimed savings
   }
   return 0; // active <-> paused does not count as canceled savings
-}
-
-function validateSubscriptionPayload(body, isUpdate = false) {
-  const errors = [];
-
-  // Reject anything that is not a plain JSON object (e.g., an array)
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    return { isValid: false, errors: ['Request body must be a JSON object.'], cleaned: null };
-  }
-
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const categoryId = body.category_id;
-  const amountCents = body.amount_cents;
-  const frequency = body.frequency;
-  const status = body.status === undefined ? 'active' : body.status;
-
-  if (!name) {
-    errors.push('Subscription name is required and cannot be empty.');
-  } else if (name.length > 100) {
-    errors.push('Subscription name must be 100 characters or fewer.');
-  }
-  // typeof check rejects strings ("1"), booleans (true), and null.
-  // Number.isInteger rejects decimals, NaN, and Infinity.
-  if (typeof categoryId !== 'number' || !Number.isInteger(categoryId) || categoryId <= 0) {
-    errors.push('A valid category_id is required.');
-  }
-  if (typeof amountCents !== 'number' || !Number.isInteger(amountCents) || amountCents <= 0) {
-    errors.push('Cost must be a positive integer in cents (greater than $0.00).');
-  } else if (amountCents > 100000000) {
-    errors.push('Cost cannot exceed $1,000,000.00.');
-  }
-  if (!VALID_FREQUENCIES.includes(frequency)) {
-    errors.push(`Frequency must be one of: ${VALID_FREQUENCIES.join(', ')}.`);
-  }
-  if (!VALID_STATUSES.includes(status)) {
-    errors.push(`Status must be one of: ${VALID_STATUSES.join(', ')}.`);
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    cleaned: { name, categoryId, amountCents, frequency, status }
-  };
 }
 
 // GET /api/categories
