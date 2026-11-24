@@ -70,8 +70,8 @@ function validateSubscriptionPayload(body,defaultStatus = 'active') {
     errors.push(
       'Cost must be a positive integer in cents (greater than $0.00).'
     );
-  } else if (amountCents > 100000000) {
-    errors.push('Cost cannot exceed $1,000,000.00.');
+  } else if (amountCents > 1000000) {
+    errors.push('Cost cannot exceed $10,000.00.');
   }
 
   // Validate billing frequency.
