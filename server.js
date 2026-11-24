@@ -173,6 +173,7 @@ app.post('/api/subscriptions', (req, res) => {
   const { name, categoryId, amountCents, frequency, status } = validation.cleaned;
 
   try {
+    // Verify that the selected category exists before inserting the subscription in the database.
     const categoryExists = db.prepare('SELECT id FROM categories WHERE id = ?').get(categoryId);
     if (!categoryExists) {
       return res.status(400).json({ error: 'Selected category does not exist.' });
@@ -201,6 +202,7 @@ app.post('/api/subscriptions', (req, res) => {
       monthly_equivalent_cents: monthlyEquivalentCents
     });
   } catch (err) {
+    console.error('Failed to create subscription:', err);
     res.status(500).json({ error: 'Database error while creating subscription.' });
   }
 });
@@ -216,16 +218,28 @@ app.put('/api/subscriptions/:id', (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: `Subscription with ID ${id} not found.` });
   }
+  // Validate the request payload and preserve the existing subscription status if no new status is provided.
+  const validation = validateSubscriptionPayload(req.body,existing.status);
 
-  const payload = { ...req.body, status: req.body.status || existing.status };
-  const validation = validateSubscriptionPayload(payload, true);
   if (!validation.isValid) {
-    return res.status(400).json({ error: validation.errors.join(' ') });
+    return res.status(400).json({
+      error: validation.errors.join(' ')
+    });
   }
 
   const { name, categoryId, amountCents, frequency, status } = validation.cleaned;
 
   try {
+    // Verify that the selected category exists before updating the subscription in the database.
+    const categoryExists = db.prepare(
+      'SELECT id FROM categories WHERE id = ?'
+      ).get(categoryId);
+
+    if (!categoryExists) {
+      return res.status(400).json({
+        error: 'Selected category does not exist.'
+      });
+    }
     const updateTx = db.transaction(() => {
       db.prepare(`
         UPDATE subscriptions
@@ -233,7 +247,7 @@ app.put('/api/subscriptions/:id', (req, res) => {
         WHERE id = ?
       `).run(name, categoryId, amountCents, frequency, status, id);
 
-      if (existing.status !== status) {
+    if (existing.status !== status) {
         const { annualCents } = calculateAnnualizedMetrics(amountCents, frequency);
         const deltaCents = computeSavingsDeltaCents(existing.status, status, annualCents);
         db.prepare(`
@@ -262,7 +276,9 @@ app.put('/api/subscriptions/:id', (req, res) => {
       annual_cents: annualCents,
       monthly_equivalent_cents: monthlyEquivalentCents
     });
-  } catch (err) {
+  } 
+  catch (err) {
+    console.error('Failed to update subscription:', err);
     res.status(500).json({ error: 'Failed to update subscription.' });
   }
 });

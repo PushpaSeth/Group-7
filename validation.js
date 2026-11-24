@@ -7,7 +7,7 @@ const VALID_STATUSES = [
 ];
 
 // Validates subscription details submitted by the client.
-function validateSubscriptionPayload(body) {
+function validateSubscriptionPayload(body,defaultStatus = 'active') {
   const errors = [];
 
   // Ensure the request body is a valid JSON object.
@@ -31,11 +31,15 @@ function validateSubscriptionPayload(body) {
   const amountCents = body.amount_cents;
   const frequency = body.frequency;
   const status = body.status === undefined
-    ? 'active'
+    ? defaultStatus
     : body.status;
 
-  // Validate subscription name.
-  if (!name) {
+  // Validate subscription name    
+  if (typeof body.name !== 'string') {
+    errors.push(
+      'Subscription name must be a string.'
+    );
+  } else if (!name) {
     errors.push(
       'Subscription name is required and cannot be empty.'
     );
@@ -45,13 +49,16 @@ function validateSubscriptionPayload(body) {
     );
   }
 
-  // Validate category ID.
-  if (
-    typeof categoryId !== 'number' ||
-    !Number.isInteger(categoryId) ||
-    categoryId <= 0
-  ) {
-    errors.push('A valid category_id is required.');
+    // Validate category ID.
+    
+  if (typeof categoryId !== 'number') {
+    errors.push('Category ID must be a number.');
+  } 
+  else if (!Number.isInteger(categoryId)) {
+    errors.push('Category ID must be a valid integer.');
+  }
+  else if (categoryId <= 0) {
+    errors.push('Category ID must be greater than zero.');
   }
 
   // Validate subscription cost.
