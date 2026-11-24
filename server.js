@@ -65,20 +65,32 @@ function computeSavingsDeltaCents(previousStatus, newStatus, annualCents) {
 
 function validateSubscriptionPayload(body, isUpdate = false) {
   const errors = [];
+
+  // Reject anything that is not a plain JSON object (e.g., an array)
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { isValid: false, errors: ['Request body must be a JSON object.'], cleaned: null };
+  }
+
   const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const categoryId = Number(body.category_id);
-  const amountCents = Number(body.amount_cents);
+  const categoryId = body.category_id;
+  const amountCents = body.amount_cents;
   const frequency = body.frequency;
-  const status = body.status || 'active';
+  const status = body.status === undefined ? 'active' : body.status;
 
   if (!name) {
     errors.push('Subscription name is required and cannot be empty.');
+  } else if (name.length > 100) {
+    errors.push('Subscription name must be 100 characters or fewer.');
   }
-  if (!Number.isInteger(categoryId) || categoryId <= 0) {
+  // typeof check rejects strings ("1"), booleans (true), and null.
+  // Number.isInteger rejects decimals, NaN, and Infinity.
+  if (typeof categoryId !== 'number' || !Number.isInteger(categoryId) || categoryId <= 0) {
     errors.push('A valid category_id is required.');
   }
-  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+  if (typeof amountCents !== 'number' || !Number.isInteger(amountCents) || amountCents <= 0) {
     errors.push('Cost must be a positive integer in cents (greater than $0.00).');
+  } else if (amountCents > 100000000) {
+    errors.push('Cost cannot exceed $1,000,000.00.');
   }
   if (!VALID_FREQUENCIES.includes(frequency)) {
     errors.push(`Frequency must be one of: ${VALID_FREQUENCIES.join(', ')}.`);
