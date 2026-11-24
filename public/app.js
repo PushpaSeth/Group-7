@@ -245,8 +245,39 @@ document.getElementById('subscriptionForm').addEventListener('submit', async (e)
 
   const id = document.getElementById('subIdInput').value;
   const name = document.getElementById('subNameInput').value.trim();
-  const rawDollars = parseFloat(document.getElementById('subCostInput').value);
-  const amount_cents = Number.isNaN(rawDollars) ? -1 : Math.round(rawDollars * 100);
+  if (!name) {
+    errorBox.textContent = 'Subscription name is required.';
+    errorBox.classList.remove('hidden');
+    return;
+  }
+  else if (name.length > 100) {
+    errorBox.textContent = 'Subscription name must be 100 characters or fewer.';
+    errorBox.classList.remove('hidden');
+    return;
+  }
+
+  const costInput = document.getElementById('subCostInput');
+  const rawDollars = costInput.valueAsNumber;
+
+  if (!Number.isFinite(rawDollars) || rawDollars < 0.01) {
+    errorBox.textContent = 'Cost must be at least $0.01.';
+    errorBox.classList.remove('hidden');
+    return;
+  } 
+  else if (rawDollars > 10000) {
+    errorBox.textContent = 'Cost cannot exceed $10,000.00.';
+    errorBox.classList.remove('hidden');
+    return;
+  }   
+  else if (costInput.validity.stepMismatch) {
+    errorBox.textContent = 'Cost must have no more than two decimal places.';
+    errorBox.classList.remove('hidden');
+    return;
+  }
+
+  //const rawDollars = parseFloat(document.getElementById('subCostInput').value);
+  //const amount_cents = Number.isNaN(rawDollars) ? -1 : Math.round(rawDollars * 100);
+  const amount_cents = Math.round(rawDollars * 100);
   const frequency = document.getElementById('subFrequencySelect').value;
   const category_id = Number(document.getElementById('subCategorySelect').value);
   const status = document.getElementById('subStatusSelect').value;
