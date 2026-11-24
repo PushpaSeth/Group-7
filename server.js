@@ -112,7 +112,7 @@ app.get('/api/categories', (req, res) => {
     const categories = db.prepare('SELECT id, name FROM categories ORDER BY id ASC').all();
     res.json(categories);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch categories.', details: err.message });
+    res.status(500).json({ error: 'Failed to fetch categories.' });
   }
 });
 
@@ -148,7 +148,7 @@ app.get('/api/subscriptions', (req, res) => {
 
     res.json(enriched);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to retrieve subscriptions.', details: err.message });
+    res.status(500).json({ error: 'Failed to retrieve subscriptions.' });
   }
 });
 
@@ -197,7 +197,7 @@ app.get('/api/summary', (req, res) => {
       recent_audit_logs: recentLogs
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to calculate summary metrics.', details: err.message });
+    res.status(500).json({ error: 'Failed to calculate summary metrics.' });
   }
 });
 
@@ -239,7 +239,7 @@ app.post('/api/subscriptions', (req, res) => {
       monthly_equivalent_cents: monthlyEquivalentCents
     });
   } catch (err) {
-    res.status(500).json({ error: 'Database error while creating subscription.', details: err.message });
+    res.status(500).json({ error: 'Database error while creating subscription.' });
   }
 });
 
@@ -301,7 +301,7 @@ app.put('/api/subscriptions/:id', (req, res) => {
       monthly_equivalent_cents: monthlyEquivalentCents
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to update subscription.', details: err.message });
+    res.status(500).json({ error: 'Failed to update subscription.' });
   }
 });
 
@@ -368,7 +368,7 @@ app.patch('/api/subscriptions/:id/status', (req, res) => {
       savings_delta_cents: deltaCents
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to update subscription status.', details: err.message });
+    res.status(500).json({ error: 'Failed to update subscription status.' });
   }
 });
 
@@ -388,8 +388,22 @@ app.delete('/api/subscriptions/:id', (req, res) => {
     db.prepare('DELETE FROM subscriptions WHERE id = ?').run(id);
     res.json({ message: `Subscription "${existing.name}" (ID ${id}) deleted.`, deleted_id: id });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to delete subscription.', details: err.message });
+    res.status(500).json({ error: 'Failed to delete subscription.' });
   }
+});
+
+// Unknown API routes return a JSON 404 instead of an HTML page
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API route not found.' });
+});
+
+// Malformed JSON and unexpected errors return JSON (no stack traces)
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Request body must be valid JSON.' });
+  }
+  console.error(err);
+  res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
 app.listen(PORT, () => {
