@@ -286,23 +286,34 @@ app.put('/api/subscriptions/:id', (req, res) => {
 // PATCH /api/subscriptions/:id/status
 app.patch('/api/subscriptions/:id/status', (req, res) => {
   const id = Number(req.params.id);
-  const { status: newStatus } = req.body;
-
+  
   if (!Number.isInteger(id) || id <= 0) {
     return res.status(400).json({ error: 'Invalid subscription ID.' });
   }
+  if (
+    typeof req.body !== 'object' ||
+    req.body === null ||
+    Array.isArray(req.body)
+  ) {
+    return res.status(400).json({
+      error: 'Request body must be a JSON object.'
+    });
+  }
+  const { status: newStatus } = req.body;
   if (!VALID_STATUSES.includes(newStatus)) {
     return res.status(400).json({
       error: `Status must be one of: ${VALID_STATUSES.join(', ')}.`
     });
   }
-
-  const existing = db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(id);
-  if (!existing) {
-    return res.status(404).json({ error: `Subscription with ID ${id} not found.` });
-  }
-
-  if (existing.status === newStatus) {
+   
+  
+  try {
+    const existing = db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: `Subscription with ID ${id} not found.` });
+    }
+  
+    if (existing.status === newStatus) {
     const { annualCents, monthlyEquivalentCents } = calculateAnnualizedMetrics(
       existing.amount_cents,
       existing.frequency
@@ -315,13 +326,13 @@ app.patch('/api/subscriptions/:id/status', (req, res) => {
     });
   }
 
-  const { annualCents, monthlyEquivalentCents } = calculateAnnualizedMetrics(
-    existing.amount_cents,
-    existing.frequency
-  );
-  const deltaCents = computeSavingsDeltaCents(existing.status, newStatus, annualCents);
+    const { annualCents, monthlyEquivalentCents } = calculateAnnualizedMetrics(
+      existing.amount_cents,
+      existing.frequency
+    );
+  
+    const deltaCents = computeSavingsDeltaCents(existing.status, newStatus, annualCents);
 
-  try {
     const statusTx = db.transaction(() => {
       db.prepare('UPDATE subscriptions SET status = ? WHERE id = ?').run(newStatus, id);
       db.prepare(`
@@ -346,6 +357,7 @@ app.patch('/api/subscriptions/:id/status', (req, res) => {
       savings_delta_cents: deltaCents
     });
   } catch (err) {
+    console.error('Failed to update subscription status:', err);
     res.status(500).json({ error: 'Failed to update subscription status.' });
   }
 });
