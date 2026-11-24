@@ -8,8 +8,9 @@ CREATE TABLE IF NOT EXISTS categories (
 CREATE TABLE IF NOT EXISTS subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category_id INTEGER NOT NULL REFERENCES categories(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-    name TEXT NOT NULL CHECK(length(trim(name)) > 0),
-    amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+    name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 100),
+    amount_cents INTEGER NOT NULL CHECK(typeof(amount_cents) = 'integer'
+    AND amount_cents BETWEEN 1 AND 1000000),
     frequency TEXT NOT NULL CHECK(frequency IN ('weekly', 'monthly', 'quarterly', 'annual')),
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'canceled')),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))

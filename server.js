@@ -8,6 +8,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = process.env.DB_FILE || path.join(__dirname, 'data', 'subscriptions.db');
 
+const {
+  validateSubscriptionPayload,
+  VALID_STATUSES
+} = require('./validation.js');
+
 // Ensure data directory exists
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
@@ -29,8 +34,8 @@ if (process.argv.includes('--seed')) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const VALID_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'annual'];
-const VALID_STATUSES = ['active', 'paused', 'canceled'];
+//const VALID_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'annual'];
+//const VALID_STATUSES = ['active', 'paused', 'canceled'];
 
 /**
  * Converts billing amount_cents and frequency into standardized integer annual_cents
@@ -61,49 +66,6 @@ function computeSavingsDeltaCents(previousStatus, newStatus, annualCents) {
     return -annualCents; // Re-activated or paused; removes previously claimed savings
   }
   return 0; // active <-> paused does not count as canceled savings
-}
-
-function validateSubscriptionPayload(body, isUpdate = false) {
-  const errors = [];
-
-  // Reject anything that is not a plain JSON object (e.g., an array)
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    return { isValid: false, errors: ['Request body must be a JSON object.'], cleaned: null };
-  }
-
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const categoryId = body.category_id;
-  const amountCents = body.amount_cents;
-  const frequency = body.frequency;
-  const status = body.status === undefined ? 'active' : body.status;
-
-  if (!name) {
-    errors.push('Subscription name is required and cannot be empty.');
-  } else if (name.length > 100) {
-    errors.push('Subscription name must be 100 characters or fewer.');
-  }
-  // typeof check rejects strings ("1"), booleans (true), and null.
-  // Number.isInteger rejects decimals, NaN, and Infinity.
-  if (typeof categoryId !== 'number' || !Number.isInteger(categoryId) || categoryId <= 0) {
-    errors.push('A valid category_id is required.');
-  }
-  if (typeof amountCents !== 'number' || !Number.isInteger(amountCents) || amountCents <= 0) {
-    errors.push('Cost must be a positive integer in cents (greater than $0.00).');
-  } else if (amountCents > 100000000) {
-    errors.push('Cost cannot exceed $1,000,000.00.');
-  }
-  if (!VALID_FREQUENCIES.includes(frequency)) {
-    errors.push(`Frequency must be one of: ${VALID_FREQUENCIES.join(', ')}.`);
-  }
-  if (!VALID_STATUSES.includes(status)) {
-    errors.push(`Status must be one of: ${VALID_STATUSES.join(', ')}.`);
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    cleaned: { name, categoryId, amountCents, frequency, status }
-  };
 }
 
 // GET /api/categories
@@ -211,6 +173,7 @@ app.post('/api/subscriptions', (req, res) => {
   const { name, categoryId, amountCents, frequency, status } = validation.cleaned;
 
   try {
+    // Verify that the selected category exists before inserting the subscription in the database.
     const categoryExists = db.prepare('SELECT id FROM categories WHERE id = ?').get(categoryId);
     if (!categoryExists) {
       return res.status(400).json({ error: 'Selected category does not exist.' });
@@ -239,6 +202,7 @@ app.post('/api/subscriptions', (req, res) => {
       monthly_equivalent_cents: monthlyEquivalentCents
     });
   } catch (err) {
+    console.error('Failed to create subscription:', err);
     res.status(500).json({ error: 'Database error while creating subscription.' });
   }
 });
@@ -254,16 +218,28 @@ app.put('/api/subscriptions/:id', (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: `Subscription with ID ${id} not found.` });
   }
+  // Validate the request payload and preserve the existing subscription status if no new status is provided.
+  const validation = validateSubscriptionPayload(req.body,existing.status);
 
-  const payload = { ...req.body, status: req.body.status || existing.status };
-  const validation = validateSubscriptionPayload(payload, true);
   if (!validation.isValid) {
-    return res.status(400).json({ error: validation.errors.join(' ') });
+    return res.status(400).json({
+      error: validation.errors.join(' ')
+    });
   }
 
   const { name, categoryId, amountCents, frequency, status } = validation.cleaned;
 
   try {
+    // Verify that the selected category exists before updating the subscription in the database.
+    const categoryExists = db.prepare(
+      'SELECT id FROM categories WHERE id = ?'
+      ).get(categoryId);
+
+    if (!categoryExists) {
+      return res.status(400).json({
+        error: 'Selected category does not exist.'
+      });
+    }
     const updateTx = db.transaction(() => {
       db.prepare(`
         UPDATE subscriptions
@@ -271,7 +247,7 @@ app.put('/api/subscriptions/:id', (req, res) => {
         WHERE id = ?
       `).run(name, categoryId, amountCents, frequency, status, id);
 
-      if (existing.status !== status) {
+    if (existing.status !== status) {
         const { annualCents } = calculateAnnualizedMetrics(amountCents, frequency);
         const deltaCents = computeSavingsDeltaCents(existing.status, status, annualCents);
         db.prepare(`
@@ -300,7 +276,9 @@ app.put('/api/subscriptions/:id', (req, res) => {
       annual_cents: annualCents,
       monthly_equivalent_cents: monthlyEquivalentCents
     });
-  } catch (err) {
+  } 
+  catch (err) {
+    console.error('Failed to update subscription:', err);
     res.status(500).json({ error: 'Failed to update subscription.' });
   }
 });
@@ -308,23 +286,34 @@ app.put('/api/subscriptions/:id', (req, res) => {
 // PATCH /api/subscriptions/:id/status
 app.patch('/api/subscriptions/:id/status', (req, res) => {
   const id = Number(req.params.id);
-  const { status: newStatus } = req.body;
-
+  
   if (!Number.isInteger(id) || id <= 0) {
     return res.status(400).json({ error: 'Invalid subscription ID.' });
   }
+  if (
+    typeof req.body !== 'object' ||
+    req.body === null ||
+    Array.isArray(req.body)
+  ) {
+    return res.status(400).json({
+      error: 'Request body must be a JSON object.'
+    });
+  }
+  const { status: newStatus } = req.body;
   if (!VALID_STATUSES.includes(newStatus)) {
     return res.status(400).json({
       error: `Status must be one of: ${VALID_STATUSES.join(', ')}.`
     });
   }
-
-  const existing = db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(id);
-  if (!existing) {
-    return res.status(404).json({ error: `Subscription with ID ${id} not found.` });
-  }
-
-  if (existing.status === newStatus) {
+   
+  
+  try {
+    const existing = db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: `Subscription with ID ${id} not found.` });
+    }
+  
+    if (existing.status === newStatus) {
     const { annualCents, monthlyEquivalentCents } = calculateAnnualizedMetrics(
       existing.amount_cents,
       existing.frequency
@@ -337,13 +326,13 @@ app.patch('/api/subscriptions/:id/status', (req, res) => {
     });
   }
 
-  const { annualCents, monthlyEquivalentCents } = calculateAnnualizedMetrics(
-    existing.amount_cents,
-    existing.frequency
-  );
-  const deltaCents = computeSavingsDeltaCents(existing.status, newStatus, annualCents);
+    const { annualCents, monthlyEquivalentCents } = calculateAnnualizedMetrics(
+      existing.amount_cents,
+      existing.frequency
+    );
+  
+    const deltaCents = computeSavingsDeltaCents(existing.status, newStatus, annualCents);
 
-  try {
     const statusTx = db.transaction(() => {
       db.prepare('UPDATE subscriptions SET status = ? WHERE id = ?').run(newStatus, id);
       db.prepare(`
@@ -368,6 +357,7 @@ app.patch('/api/subscriptions/:id/status', (req, res) => {
       savings_delta_cents: deltaCents
     });
   } catch (err) {
+    console.error('Failed to update subscription status:', err);
     res.status(500).json({ error: 'Failed to update subscription status.' });
   }
 });
